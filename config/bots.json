@@ -1,0 +1,26 @@
+{
+  "bots": [
+    {
+      "id": "coo-bot",
+      "name": "运营总监",
+      "type": "coo",
+      "workspace": "bots/coo-bot",
+      "appId": "cli_a929b8ebb5f81bc8",
+      "appSecret": "Cko31GaqXjUkKmQ0WLfh6bwNQFEIfwhd",
+      "encryptKey": "",
+      "verificationToken": "",
+      "capabilities": [
+        "运营策略",
+        "数据分析",
+        "内容运营",
+        "活动策划",
+        "竞品分析"
+      ],
+      "webhook": {
+        "path": "/webhook/coo-bot",
+        "enabled": true
+      },
+      "enabled": true
+    }
+  ]
+}
