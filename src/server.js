@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import BotManager from './bot-manager.js';
 import MessageHandler from './message-handler.js';
+import FeishuEncrypt from './feishu-encrypt.js';
 
 dotenv.config();
 
@@ -14,6 +15,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 botManager.initializeBots();
+
+const encryptManager = {
+  'coo-bot': new FeishuEncrypt(
+    process.env.COO_BOT_ENCRYPT_KEY,
+    process.env.COO_BOT_VERIFICATION_TOKEN
+  )
+};
 
 app.get('/health', (req, res) => {
   res.json({ 
@@ -43,9 +51,44 @@ app.get('/', (req, res) => {
 
 app.post('/webhook/coo-bot', async (req, res) => {
   try {
-    console.log('[Webhook] 收到 COO Bot 请求:', JSON.stringify(req.body, null, 2));
+    console.log('[Webhook] 收到 COO Bot 请求');
 
-    const challenge = req.body.challenge;
+    const timestamp = req.headers['x-lark-request-timestamp'];
+    const nonce = req.headers['x-lark-request-nonce'];
+    const signature = req.headers['x-lark-signature'];
+
+    let event = req.body;
+    let isEncrypted = false;
+
+    if (event.encrypt) {
+      isEncrypted = true;
+      console.log('[Webhook] 检测到加密消息，开始解密');
+
+      const encrypt = encryptManager['coo-bot'];
+      if (!encrypt) {
+        console.error('[Webhook] 加密管理器未初始化');
+        return res.status(500).json({ error: '加密管理器未初始化' });
+      }
+
+      const bodyString = JSON.stringify(req.body);
+      if (timestamp && nonce && signature && encrypt.verificationToken) {
+        const isValid = encrypt.verifySignature(timestamp, nonce, bodyString, signature);
+        if (!isValid) {
+          console.error('[Webhook] 签名验证失败');
+          return res.status(403).json({ error: '签名验证失败' });
+        }
+      }
+
+      try {
+        event = encrypt.decryptEvent(req.body);
+        console.log('[Webhook] 消息解密成功');
+      } catch (error) {
+        console.error('[Webhook] 消息解密失败:', error.message);
+        return res.status(400).json({ error: '消息解密失败' });
+      }
+    }
+
+    const challenge = event.challenge;
     if (challenge) {
       console.log('[Webhook] 响应 URL 验证');
       return res.json({ challenge });
@@ -56,15 +99,22 @@ app.post('/webhook/coo-bot', async (req, res) => {
       return res.status(404).json({ error: '机器人未找到' });
     }
 
-    const event = req.body.event;
-    if (event) {
-      console.log('[Webhook] 处理事件类型:', event.type);
+    if (event.event) {
+      console.log('[Webhook] 处理事件类型:', event.event.type);
 
-      if (event.type === 'message' && event.content) {
-        const content = JSON.parse(event.content);
-        const messageReceiveId = { id: event.sender.sender_id.open_id, type: 'open_id' };
+      if (event.event.type === 'message' && event.event.content) {
+        const content = typeof event.event.content === 'string' 
+          ? JSON.parse(event.event.content) 
+          : event.event.content;
         
-        await messageHandler.handle('coo-bot', messageReceiveId, content.text);
+        const messageReceiveId = { 
+          id: event.event.sender.sender_id.open_id, 
+          type: 'open_id' 
+        };
+        
+        console.log('[Webhook] 收到消息内容:', content.text);
+        
+        await messageHandler.handle('coo-bot', messageReceiveId, content.text, event.event);
       }
     }
 
