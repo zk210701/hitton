@@ -52,6 +52,7 @@ app.get('/', (req, res) => {
 app.post('/webhook/coo-bot', async (req, res) => {
   try {
     console.log('[Webhook] 收到 COO Bot 请求');
+    console.log('[Webhook] 请求体 keys:', Object.keys(req.body));
 
     const timestamp = req.headers['x-lark-request-timestamp'];
     const nonce = req.headers['x-lark-request-nonce'];
@@ -60,9 +61,16 @@ app.post('/webhook/coo-bot', async (req, res) => {
     let event = req.body;
     let isEncrypted = false;
 
+    // 尝试直接访问 event 字段（飞书的新格式）
+    if (event.event && !event.encrypt) {
+      console.log('[Webhook] 检测到未加密的 event');
+      event = event.event;
+    }
+
     if (event.encrypt) {
       isEncrypted = true;
       console.log('[Webhook] 检测到加密消息，开始解密');
+      console.log('[Webhook] Encrypt Key 配置:', process.env.COO_BOT_ENCRYPT_KEY ? '已配置' : '未配置');
 
       const encrypt = encryptManager['coo-bot'];
       if (!encrypt) {
@@ -82,9 +90,11 @@ app.post('/webhook/coo-bot', async (req, res) => {
       try {
         event = encrypt.decryptEvent(req.body);
         console.log('[Webhook] 消息解密成功');
+        console.log('[Webhook] 解密后 event keys:', Object.keys(event));
       } catch (error) {
         console.error('[Webhook] 消息解密失败:', error.message);
-        return res.status(400).json({ error: '消息解密失败' });
+        console.error('[Webhook] 解密错误堆栈:', error.stack);
+        // 不返回错误，继续尝试处理
       }
     }
 
@@ -99,29 +109,29 @@ app.post('/webhook/coo-bot', async (req, res) => {
       return res.status(404).json({ error: '机器人未找到' });
     }
 
-    if (event.event) {
-      console.log('[Webhook] 处理事件类型:', event.event.type);
+    console.log('[Webhook] 事件类型:', event.type);
+    console.log('[Webhook] 完整 event 对象:', JSON.stringify(event, null, 2));
 
-      if (event.event.type === 'message' && event.event.content) {
-        const content = typeof event.event.content === 'string' 
-          ? JSON.parse(event.event.content) 
-          : event.event.content;
-        
-        const messageReceiveId = { 
-          id: event.event.sender.sender_id.open_id, 
-          type: 'open_id' 
-        };
-        
-        console.log('[Webhook] 收到消息内容:', content.text);
-        
-        await messageHandler.handle('coo-bot', messageReceiveId, content.text, event.event);
-      }
+    if (event.type === 'message' && event.content) {
+      const content = typeof event.content === 'string'
+        ? JSON.parse(event.content)
+        : event.content;
+
+      const messageReceiveId = {
+        id: event.sender.sender_id.open_id,
+        type: 'open_id'
+      };
+
+      console.log('[Webhook] 收到消息内容:', content.text);
+
+      await messageHandler.handle('coo-bot', messageReceiveId, content.text, event);
     }
 
     res.json({ code: 0, msg: 'success' });
 
   } catch (error) {
     console.error('[Webhook] 处理失败:', error);
+    console.error('[Webhook] 错误堆栈:', error.stack);
     res.status(500).json({ error: error.message });
   }
 });
