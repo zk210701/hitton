@@ -1,4 +1,23 @@
-import CryptoJS from 'crypto-js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+
+// 动态导入 crypto-js，支持 ESM 和 CommonJS
+let CryptoJS;
+try {
+  // 尝试 ESM 导入
+  const cryptoModule = await import('crypto-js');
+  CryptoJS = cryptoModule.default || cryptoModule;
+} catch (error) {
+  // 降级到 CommonJS
+  try {
+    const cryptoModule = require('crypto-js');
+    CryptoJS = cryptoModule.default || cryptoModule;
+  } catch (err) {
+    console.error('[FeishuEncrypt] 无法加载 crypto-js:', err);
+    throw err;
+  }
+}
 
 class FeishuEncrypt {
   constructor(encryptKey, verificationToken) {
